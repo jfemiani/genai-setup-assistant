@@ -1,0 +1,4 @@
+.streamlit/
+chat_history.json
+chat_images/
+.vscode

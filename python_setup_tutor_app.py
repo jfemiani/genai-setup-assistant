@@ -1,3 +1,4 @@
+import base64
 import streamlit as st
 from openai import OpenAI
 import json
@@ -9,6 +10,9 @@ import zipfile
 from datetime import datetime
 from streamlit_paste_button import paste_image_button as pbutton
 import html
+import subprocess
+import tempfile
+import os
 
 st.set_page_config(page_title="GenAI Setup Tutor", layout="wide")
 
@@ -16,6 +20,35 @@ CHAT_HISTORY_FILE = "chat_history.json"
 IMG_DIR = "chat_images"
 
 os.makedirs(IMG_DIR, exist_ok=True)
+
+
+
+def generate_pdf_from_markdown(md_text):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        md_path = os.path.join(tmpdir, "chat.md")
+        pdf_path = os.path.join(tmpdir, "chat.pdf")
+
+        with open(md_path, "w") as f:
+            f.write(md_text)
+
+        result = subprocess.run(
+            [
+                "pandoc",
+                md_path,
+                "-o",
+                pdf_path,
+                "--pdf-engine=tectonic",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=os.environ,  # 🔑 preserve the conda environment
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"PDF generation failed:\n{result.stderr.decode()}")
+
+        with open(pdf_path, "rb") as f:
+            return f.read()
 
 
 def strip_html_comments(text):
@@ -45,6 +78,15 @@ if "messages" not in st.session_state:
     st.session_state.messages = load_messages()
 
 # --- API Key Input ---
+
+
+st.text("Pandoc version:")
+st.code(subprocess.getoutput("pandoc --version"))
+
+st.text("Tectonic version:")
+st.code(subprocess.getoutput("tectonic --version"))
+
+
 
 st.title("✨ Lab 0 AI Assistant")
 st.caption("Your interactive helper for getting started with the development environment.")
@@ -77,8 +119,10 @@ st.sidebar.header("🧠 Model Selection")
 model = "gpt-4o"
 is_gpt4o = model == "gpt-4o"
 
+
 # --- Chat Log Download (Markdown + images zipped) ---
-def export_chat_as_markdown_zip():
+def generate_chat_markdown():
+    """Generates markdown text and image asset paths from the chat history."""
     md_lines = []
     assets = []
     for i, msg in enumerate(st.session_state.messages):
@@ -100,21 +144,56 @@ def export_chat_as_markdown_zip():
                     md_lines.append(f"![Image]({filename})\n")
         else:
             md_lines.append(content + "\n")
+    return "\n".join(md_lines), assets
 
+
+def export_chat_as_markdown_zip():
+    """Zips up the generated markdown file and image assets for download."""
+    md_text, assets = generate_chat_markdown()
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as z:
-        z.writestr("chat.md", "\n".join(md_lines))
+        z.writestr("chat.md", md_text)
         for asset in assets:
             z.write(asset, os.path.basename(asset))
+    return buffer.getvalue()
 
+
+
+if "zip_data" not in st.session_state:
+    st.session_state.zip_data = None
+
+# Step 1: Prepare zip (generate on click)
+if st.sidebar.button("📦 Prepare Zip"):
+    st.session_state.zip_data = export_chat_as_markdown_zip()
+
+# Step 2: Show download button only if zip is ready
+if st.session_state.zip_data:
     st.sidebar.download_button(
-        "⬇️ Download Chat Archive (.zip)",
-        buffer.getvalue(),
+        label="⬇️ Download Zip",
+        data=st.session_state.zip_data,
         file_name="chat_export.zip",
         mime="application/zip"
     )
 
-export_chat_as_markdown_zip()
+st.sidebar.write("")
+if st.sidebar.button("📄 Generate PDF"):
+    markdown_text, assets = generate_chat_markdown()  # You define this
+    try:
+        pdf_data = generate_pdf_from_markdown(markdown_text)
+        st.session_state.chat_pdf = pdf_data
+    except Exception as e:
+        st.error(str(e))
+
+if "chat_pdf" in st.session_state:
+    st.sidebar.download_button(
+        label="⬇️ Download PDF",
+        data=st.session_state.chat_pdf,
+        file_name="chat_export.pdf",
+        mime="application/pdf"
+    )
+
+
+st.sidebar.write("")
 
 # --- Restart Button ---
 if st.sidebar.button("🔄 Restart Chat"):
