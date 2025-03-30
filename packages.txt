@@ -1,1 +1,3 @@
-pandoc
+ppandoc
+texlive
+texlive-xetex

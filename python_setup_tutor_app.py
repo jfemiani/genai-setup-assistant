@@ -36,8 +36,7 @@ def generate_pdf_from_markdown(md_text):
                 "pandoc",
                 md_path,
                 "-o",
-                pdf_path,
-                "--pdf-engine=tectonic",
+                pdf_path
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -77,14 +76,6 @@ def save_messages(messages):
 if "messages" not in st.session_state:
     st.session_state.messages = load_messages()
 
-# --- API Key Input ---
-
-
-st.text("Pandoc version:")
-st.code(subprocess.getoutput("pandoc --version"))
-
-st.text("Tectonic version:")
-st.code(subprocess.getoutput("tectonic --version"))
 
 
 
